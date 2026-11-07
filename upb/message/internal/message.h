@@ -25,6 +25,7 @@
 #include "upb/message/internal/types.h"
 #include "upb/message/value.h"
 #include "upb/mini_table/extension.h"
+#include "upb/mini_table/field.h"
 #include "upb/mini_table/internal/message.h"
 #include "upb/mini_table/message.h"
 
@@ -84,8 +85,10 @@ typedef struct upb_TaggedAuxPtr {
   //
   // Invariants that hold for all extensions, canonical or non-canonical:
   //
-  //   - The extension is described by a upb_MiniTableExtension whose field is
-  //     flagged as an extension.
+  //   - The extension is described by a upb_MiniTableField. A canonical
+  //     extension's field is always part of a upb_MiniTableExtension; a
+  //     non-canonical extension's field is part of a upb_MiniTableExtension
+  //     iff upb_MiniTableField_IsExtension() is true.
   //   - The field is never a map, since protobuf does not allow map extensions.
   uintptr_t ptr;
 } upb_TaggedAuxPtr;
@@ -294,12 +297,13 @@ UPB_NODISCARD UPB_INLINE struct upb_Message* _upb_Message_New(
 // use.
 UPB_NODISCARD UPB_INLINE upb_AuxField* UPB_PRIVATE(_upb_Extension_New)(
     const upb_MiniTableExtension* e, upb_Arena* a) {
-  const size_t size =
-      UPB_PRIVATE(_upb_Extension_Size)(upb_MiniTableExtension_ToField(e));
+  const upb_MiniTableField* f = upb_MiniTableExtension_ToField(e);
+  UPB_ASSERT(upb_MiniTableField_IsExtension(f));
+  const size_t size = UPB_PRIVATE(_upb_Extension_Size)(f);
   upb_AuxField* ext = (upb_AuxField*)upb_Arena_Malloc(a, size);
   if (UPB_UNLIKELY(!ext)) return NULL;
   _upb_Message_AlignedMemsetZero(ext, size);
-  ext->UPB_ONLYBITS(ext) = e;
+  ext->UPB_ONLYBITS(field) = f;
   return ext;
 }
 
@@ -428,7 +432,7 @@ UPB_INLINE bool upb_Message_NextExtension(const struct upb_Message* msg,
         // Empty repeated fields or maps semantically don't exist.
         if (UPB_PRIVATE(_upb_Extension_IsEmpty)(ext)) continue;
 
-        *out_e = upb_Extension_MiniTableExtension(ext);
+        *out_e = UPB_PRIVATE(_upb_Extension_MiniTableExtension)(ext);
         *out_v = upb_Extension_GetValue(ext);
         *iter = i;
         return true;
@@ -458,7 +462,7 @@ UPB_INLINE bool UPB_PRIVATE(_upb_Message_NextExtensionReverse)(
     // Empty repeated fields or maps semantically don't exist.
     if (UPB_PRIVATE(_upb_Extension_IsEmpty)(ext)) continue;
 
-    *out_e = upb_Extension_MiniTableExtension(ext);
+    *out_e = UPB_PRIVATE(_upb_Extension_MiniTableExtension)(ext);
     *out_v = upb_Extension_GetValue(ext);
     *iter = i;
     return true;
